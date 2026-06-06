@@ -32,4 +32,4 @@ jobs:
         run: |
           skopeo copy --all \
             docker://docker.io/justlikemaki/aiclient-2-api:latest \
-            docker://registry.cn-shanghai.aliyuncs.com/rayless/ray:latest
+            docker://registry.cn-shanghai.aliyuncs.com/rayless/aiclient-2-api:latest
