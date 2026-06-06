@@ -31,5 +31,5 @@ jobs:
       - name: Copy all image architectures
         run: |
           skopeo copy --all \
-            docker://docker.io/homarr-labs/homarr:latest \
+            docker://ghcr.io/homarr-labs/homarr:latest \
             docker://registry.cn-shanghai.aliyuncs.com/rayless/homarr:latest
