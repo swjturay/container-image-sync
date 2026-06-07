@@ -19,43 +19,30 @@ jobs:
         include:
           - source: docker.io/justlikemaki/aiclient-2-api:latest
             target: aiclient-2-api:latest
-            copy_args: --all
           - source: ghcr.io/homarr-labs/homarr:latest
             target: homarr:latest
-            copy_args: --all
           - source: docker.io/weishaw/sub2api:latest
             target: sub2api:latest
-            copy_args: --all
           - source: docker.io/vaultwarden/server:latest
             target: vaultwarden:latest
-            copy_args: --all
           - source: ghcr.io/home-assistant/home-assistant:stable
             target: home-assistant:stable
-            copy_args: --override-os linux --override-arch amd64 --format v2s2
           - source: docker.io/guovern/iptv-api:latest
             target: iptv-api:latest
-            copy_args: --all
           - source: docker.io/gdy666/lucky:latest
             target: lucky:latest
-            copy_args: --all
           - source: docker.io/metacubex/mihomo:latest
             target: mihomo:latest
-            copy_args: --all
           - source: docker.io/openlistteam/openlist:latest-aio
             target: openlist:latest-aio
-            copy_args: --all
           - source: lscr.io/linuxserver/qbittorrent:latest
             target: qbittorrent:latest
-            copy_args: --all
           - source: docker.io/rustdesk/rustdesk-server:latest
             target: rustdesk-server:latest
-            copy_args: --all
           - source: docker.io/library/postgres:18-alpine
             target: postgres:18-alpine
-            copy_args: --all
           - source: docker.io/library/redis:8-alpine
             target: redis:8-alpine
-            copy_args: --all
 
     steps:
       - name: Install Skopeo
@@ -73,8 +60,16 @@ jobs:
               --username "$ACR_USERNAME" \
               --password-stdin registry.cn-shanghai.aliyuncs.com
 
-      - name: Copy all image architectures
+      - name: Copy linux/amd64 image
         run: |
-          skopeo copy ${{ matrix.copy_args }} \
-            "docker://${{ matrix.source }}" \
-            "docker://registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}"
+          for attempt in 1 2 3; do
+            skopeo copy \
+              --override-os linux \
+              --override-arch amd64 \
+              --format v2s2 \
+              "docker://${{ matrix.source }}" \
+              "docker://registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}" &&
+              exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
