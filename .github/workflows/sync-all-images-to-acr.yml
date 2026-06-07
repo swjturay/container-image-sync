@@ -10,40 +10,7 @@ permissions:
 
 jobs:
   sync:
-    name: Sync ${{ matrix.target }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        include:
-          - source: docker.io/justlikemaki/aiclient-2-api:latest
-            target: aiclient-2-api:latest
-          - source: ghcr.io/homarr-labs/homarr:latest
-            target: homarr:latest
-          - source: docker.io/weishaw/sub2api:latest
-            target: sub2api:latest
-          - source: docker.io/vaultwarden/server:latest
-            target: vaultwarden:latest
-          - source: ghcr.io/home-assistant/home-assistant:stable
-            target: home-assistant:stable
-            method: docker
-          - source: docker.io/guovern/iptv-api:latest
-            target: iptv-api:latest
-          - source: docker.io/gdy666/lucky:latest
-            target: lucky:latest
-          - source: docker.io/metacubex/mihomo:latest
-            target: mihomo:latest
-          - source: docker.io/openlistteam/openlist:latest-aio
-            target: openlist:latest-aio
-          - source: lscr.io/linuxserver/qbittorrent:latest
-            target: qbittorrent:latest
-          - source: docker.io/rustdesk/rustdesk-server:latest
-            target: rustdesk-server:latest
-          - source: docker.io/library/postgres:18-alpine
-            target: postgres:18-alpine
-          - source: docker.io/library/redis:8-alpine
-            target: redis:8-alpine
 
     steps:
       - name: Install Skopeo
@@ -60,34 +27,64 @@ jobs:
             skopeo login \
               --username "$ACR_USERNAME" \
               --password-stdin registry.cn-shanghai.aliyuncs.com
-
-      - name: Copy linux/amd64 image with Skopeo
-        if: matrix.method != 'docker'
-        run: |
-          for attempt in 1 2 3; do
-            skopeo copy \
-              --override-os linux \
-              --override-arch amd64 \
-              --format v2s2 \
-              "docker://${{ matrix.source }}" \
-              "docker://registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}" &&
-              exit 0
-            sleep $((attempt * 20))
-          done
-          exit 1
-
-      - name: Copy linux/amd64 image with Docker
-        if: matrix.method == 'docker'
-        env:
-          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-        run: |
           echo "$ACR_PASSWORD" |
             docker login \
               --username "$ACR_USERNAME" \
               --password-stdin registry.cn-shanghai.aliyuncs.com
-          docker pull --platform linux/amd64 "${{ matrix.source }}"
-          docker tag \
-            "${{ matrix.source }}" \
-            "registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}"
-          docker push "registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}"
+
+      - name: Sync linux/amd64 images
+        run: |
+          set +e
+          failures=()
+
+          sync_skopeo() {
+            local source="$1"
+            local target="$2"
+            for attempt in 1 2 3; do
+              skopeo copy \
+                --override-os linux \
+                --override-arch amd64 \
+                --format v2s2 \
+                "docker://${source}" \
+                "docker://registry.cn-shanghai.aliyuncs.com/rayless/${target}" &&
+                return 0
+              sleep $((attempt * 20))
+            done
+            return 1
+          }
+
+          while read -r source target; do
+            [ -z "$source" ] && continue
+            echo "::group::Sync ${source} -> ${target}"
+            sync_skopeo "$source" "$target" || failures+=("$source")
+            echo "::endgroup::"
+          done <<'IMAGES'
+          docker.io/justlikemaki/aiclient-2-api:latest aiclient-2-api:latest
+          ghcr.io/homarr-labs/homarr:latest homarr:latest
+          docker.io/weishaw/sub2api:latest sub2api:latest
+          docker.io/vaultwarden/server:latest vaultwarden:latest
+          docker.io/guovern/iptv-api:latest iptv-api:latest
+          docker.io/gdy666/lucky:latest lucky:latest
+          docker.io/metacubex/mihomo:latest mihomo:latest
+          docker.io/openlistteam/openlist:latest-aio openlist:latest-aio
+          lscr.io/linuxserver/qbittorrent:latest qbittorrent:latest
+          docker.io/rustdesk/rustdesk-server:latest rustdesk-server:latest
+          docker.io/library/postgres:18-alpine postgres:18-alpine
+          docker.io/library/redis:8-alpine redis:8-alpine
+          IMAGES
+
+          echo "::group::Sync Home Assistant with Docker compatibility path"
+          docker pull --platform linux/amd64 ghcr.io/home-assistant/home-assistant:stable &&
+            docker tag \
+              ghcr.io/home-assistant/home-assistant:stable \
+              registry.cn-shanghai.aliyuncs.com/rayless/home-assistant:stable &&
+            docker push registry.cn-shanghai.aliyuncs.com/rayless/home-assistant:stable ||
+            failures+=("ghcr.io/home-assistant/home-assistant:stable")
+          echo "::endgroup::"
+
+          if [ "${#failures[@]}" -gt 0 ]; then
+            printf 'Failed images:\n- %s\n' "${failures[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "All images synced successfully." >> "$GITHUB_STEP_SUMMARY"
