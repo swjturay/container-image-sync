@@ -71,6 +71,7 @@ jobs:
           docker.io/rustdesk/rustdesk-server:latest rustdesk-server:latest
           docker.io/library/postgres:18-alpine postgres:18-alpine
           docker.io/library/redis:8-alpine redis:8-alpine
+          docker.io/nousresearch/hermes-agent:latest hermes-agent:latest
           IMAGES
 
           echo "::group::Sync Home Assistant with Docker compatibility path"
