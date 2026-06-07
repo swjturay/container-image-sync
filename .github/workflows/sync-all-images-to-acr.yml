@@ -1,0 +1,67 @@
+name: Sync all images to Aliyun ACR
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 18 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - source: docker.io/justlikemaki/aiclient-2-api:latest
+            target: aiclient-2-api:latest
+          - source: ghcr.io/homarr-labs/homarr:latest
+            target: homarr:latest
+          - source: docker.io/weishaw/sub2api:latest
+            target: sub2api:latest
+          - source: docker.io/vaultwarden/server:latest
+            target: vaultwarden:latest
+          - source: ghcr.io/home-assistant/home-assistant:stable
+            target: home-assistant:stable
+          - source: docker.io/guovern/iptv-api:latest
+            target: iptv-api:latest
+          - source: docker.io/gdy666/lucky:latest
+            target: lucky:latest
+          - source: docker.io/metacubex/mihomo:latest
+            target: mihomo:latest
+          - source: docker.io/openlistteam/openlist:latest-aio
+            target: openlist:latest-aio
+          - source: lscr.io/linuxserver/qbittorrent:latest
+            target: qbittorrent:latest
+          - source: docker.io/rustdesk/rustdesk-server:latest
+            target: rustdesk-server:latest
+          - source: docker.io/library/postgres:18-alpine
+            target: postgres:18-alpine
+          - source: docker.io/library/redis:8-alpine
+            target: redis:8-alpine
+
+    steps:
+      - name: Install Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+
+      - name: Log in to Aliyun ACR
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "$ACR_PASSWORD" |
+            skopeo login \
+              --username "$ACR_USERNAME" \
+              --password-stdin registry.cn-shanghai.aliyuncs.com
+
+      - name: Copy all image architectures
+        run: |
+          skopeo copy --all \
+            "docker://${{ matrix.source }}" \
+            "docker://registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}"
