@@ -27,6 +27,7 @@ jobs:
             target: vaultwarden:latest
           - source: ghcr.io/home-assistant/home-assistant:stable
             target: home-assistant:stable
+            method: docker
           - source: docker.io/guovern/iptv-api:latest
             target: iptv-api:latest
           - source: docker.io/gdy666/lucky:latest
@@ -60,7 +61,8 @@ jobs:
               --username "$ACR_USERNAME" \
               --password-stdin registry.cn-shanghai.aliyuncs.com
 
-      - name: Copy linux/amd64 image
+      - name: Copy linux/amd64 image with Skopeo
+        if: matrix.method != 'docker'
         run: |
           for attempt in 1 2 3; do
             skopeo copy \
@@ -73,3 +75,19 @@ jobs:
             sleep $((attempt * 20))
           done
           exit 1
+
+      - name: Copy linux/amd64 image with Docker
+        if: matrix.method == 'docker'
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "$ACR_PASSWORD" |
+            docker login \
+              --username "$ACR_USERNAME" \
+              --password-stdin registry.cn-shanghai.aliyuncs.com
+          docker pull --platform linux/amd64 "${{ matrix.source }}"
+          docker tag \
+            "${{ matrix.source }}" \
+            "registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}"
+          docker push "registry.cn-shanghai.aliyuncs.com/rayless/${{ matrix.target }}"
