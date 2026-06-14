@@ -72,6 +72,7 @@ jobs:
           docker.io/library/postgres:18-alpine postgres:18-alpine
           docker.io/library/redis:8-alpine redis:8-alpine
           docker.io/nousresearch/hermes-agent:latest hermes-agent:latest
+          docker.io/moelin/1panel:v2 1panel:v2
           IMAGES
 
           echo "::group::Sync Home Assistant with Docker compatibility path"
