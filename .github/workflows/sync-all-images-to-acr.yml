@@ -27,6 +27,10 @@ jobs:
             skopeo login \
               --username "$ACR_USERNAME" \
               --password-stdin registry.cn-shanghai.aliyuncs.com
+          echo "$ACR_PASSWORD" |
+            docker login \
+              --username "$ACR_USERNAME" \
+              --password-stdin registry.cn-shanghai.aliyuncs.com
 
       - name: Sync linux/amd64 images in parallel
         env:
@@ -35,9 +39,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          workdir="$(mktemp -d)"
-          images_file="$workdir/images.txt"
-
+          images_file="$(mktemp)"
           cat > "$images_file" <<'IMAGES'
           docker.io/justlikemaki/aiclient-2-api:latest aiclient-2-api:latest
           ghcr.io/homarr-labs/homarr:latest homarr:latest
@@ -53,55 +55,50 @@ jobs:
           docker.io/library/redis:8-alpine redis:8-alpine
           docker.io/nousresearch/hermes-agent:latest hermes-agent:latest
           docker.io/moelin/1panel:v2 1panel:v2
-          ghcr.io/home-assistant/home-assistant:stable home-assistant:stable
           IMAGES
 
           sync_one() {
             local source="$1"
             local target="$2"
             local attempt
-            local safe_name
-            local log_file
 
-            safe_name="${target//[^a-zA-Z0-9_.-]/_}"
-            log_file="$workdir/${safe_name}.log"
-
-            {
-              echo "::group::Sync ${source} -> ${target}"
-              for attempt in 1 2 3; do
-                echo "Attempt ${attempt}/3"
-                if skopeo copy \
-                  --override-os linux \
-                  --override-arch amd64 \
-                  --format v2s2 \
-                  "docker://${source}" \
-                  "docker://registry.cn-shanghai.aliyuncs.com/rayless/${target}"; then
-                  echo "Synced ${source} -> ${target}"
-                  echo "::endgroup::"
-                  return 0
-                fi
-                sleep $((attempt * 20))
-              done
-              echo "Failed to sync ${source} -> ${target}"
-              echo "::endgroup::"
-            } > "$log_file" 2>&1
-
+            echo "::group::Sync ${source} -> ${target}"
+            for attempt in 1 2 3; do
+              echo "Attempt ${attempt}/3 for ${source}"
+              if skopeo copy \
+                --override-os linux \
+                --override-arch amd64 \
+                --format v2s2 \
+                "docker://${source}" \
+                "docker://registry.cn-shanghai.aliyuncs.com/rayless/${target}"; then
+                echo "Synced ${source} -> ${target}"
+                echo "::endgroup::"
+                return 0
+              fi
+              sleep $((attempt * 20))
+            done
+            echo "Failed to sync ${source} -> ${target}"
+            echo "::endgroup::"
             return 1
           }
 
           export -f sync_one
-          export workdir
 
-          set +e
-          xargs -a "$images_file" -n 2 -P "$SYNC_PARALLELISM" bash -c 'sync_one "$1" "$2"' _
-          status=$?
-          set -e
-
-          cat "$workdir"/*.log
-
-          if [ "$status" -ne 0 ]; then
+          if ! xargs -a "$images_file" -n 2 -P "$SYNC_PARALLELISM" bash -c 'sync_one "$1" "$2"' _; then
             echo "One or more image sync tasks failed." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
-          echo "All images synced successfully with parallelism=${SYNC_PARALLELISM}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Parallel skopeo image sync completed with parallelism=${SYNC_PARALLELISM}." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sync Home Assistant with Docker compatibility path
+        run: |
+          docker pull --platform linux/amd64 ghcr.io/home-assistant/home-assistant:stable
+          docker tag \
+            ghcr.io/home-assistant/home-assistant:stable \
+            registry.cn-shanghai.aliyuncs.com/rayless/home-assistant:stable
+          docker push registry.cn-shanghai.aliyuncs.com/rayless/home-assistant:stable
+          echo "Home Assistant synced with Docker compatibility path." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summary
+        run: echo "All images synced successfully." >> "$GITHUB_STEP_SUMMARY"
