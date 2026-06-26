@@ -1,0 +1,37 @@
+name: Sync Python image to Aliyun ACR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-python:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+
+      - name: Log in to Aliyun ACR
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          echo "$ACR_PASSWORD" |
+            skopeo login \
+              --username "$ACR_USERNAME" \
+              --password-stdin registry.cn-shanghai.aliyuncs.com
+
+      - name: Sync python:3.12-slim linux/amd64
+        run: |
+          skopeo copy \
+            --override-os linux \
+            --override-arch amd64 \
+            --format v2s2 \
+            docker://docker.io/library/python:3.12-slim \
+            docker://registry.cn-shanghai.aliyuncs.com/rayless/python:3.12-slim
+          echo "Synced docker.io/library/python:3.12-slim to registry.cn-shanghai.aliyuncs.com/rayless/python:3.12-slim" >> "$GITHUB_STEP_SUMMARY"
