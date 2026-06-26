@@ -53,6 +53,7 @@ jobs:
           docker.io/rustdesk/rustdesk-server:latest rustdesk-server:latest
           docker.io/library/postgres:18-alpine postgres:18-alpine
           docker.io/library/redis:8-alpine redis:8-alpine
+          docker.io/library/python:3.12-slim python:3.12-slim
           docker.io/nousresearch/hermes-agent:latest hermes-agent:latest
           docker.io/moelin/1panel:v2 1panel:v2
           IMAGES
