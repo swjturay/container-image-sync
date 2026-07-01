@@ -1,11 +1,27 @@
-name: Sync container image
+name: Sync single image to Aliyun ACR
 
 on:
   workflow_dispatch:
+    inputs:
+      source_image:
+        description: Source image, for example docker.io/weishaw/sub2api:latest
+        required: true
+        default: docker.io/weishaw/sub2api:latest
+      target_image:
+        description: Target ACR image, for example registry.cn-shanghai.aliyuncs.com/rayless/sub2api:latest
+        required: true
+        default: registry.cn-shanghai.aliyuncs.com/rayless/sub2api:latest
+      platform:
+        description: Platform to sync when all_arch is false, for example linux/amd64
+        required: true
+        default: linux/amd64
+      all_arch:
+        description: Copy all architectures instead of one platform, true or false
+        required: true
+        default: "false"
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   sync:
@@ -17,19 +33,60 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes skopeo
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to Aliyun ACR
         env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          echo "$GHCR_TOKEN" | skopeo login ghcr.io \
-            --username "${{ github.actor }}" \
-            --password-stdin
+          echo "$ACR_PASSWORD" |
+            skopeo login               --username "$ACR_USERNAME"               --password-stdin registry.cn-shanghai.aliyuncs.com
 
-      - name: Copy all image architectures
+      - name: Sync image
         env:
-          OWNER: ${{ github.repository_owner }}
+          SOURCE_IMAGE: ${{ inputs.source_image }}
+          TARGET_IMAGE: ${{ inputs.target_image }}
+          PLATFORM: ${{ inputs.platform }}
+          ALL_ARCH: ${{ inputs.all_arch }}
+        shell: bash
         run: |
-          owner_lowercase="${OWNER,,}"
-          skopeo copy --all \
-            docker://docker.io/dqzboy/registry:latest \
-            "docker://ghcr.io/${owner_lowercase}/registry:latest"
+          set -euo pipefail
+
+          source_image="${SOURCE_IMAGE#docker://}"
+          target_image="${TARGET_IMAGE#docker://}"
+          all_arch="${ALL_ARCH,,}"
+
+          if [[ -z "$source_image" || -z "$target_image" ]]; then
+            echo "source_image and target_image are required" >&2
+            exit 1
+          fi
+
+          copy_args=()
+          if [[ "$all_arch" == "true" ]]; then
+            copy_args+=(--all)
+          else
+            IFS=/ read -r os arch variant extra <<< "$PLATFORM"
+            if [[ -z "${os:-}" || -z "${arch:-}" || -n "${extra:-}" ]]; then
+              echo "platform must be formatted as os/arch or os/arch/variant" >&2
+              exit 1
+            fi
+            copy_args+=(--override-os "$os" --override-arch "$arch" --format v2s2)
+            if [[ -n "${variant:-}" ]]; then
+              copy_args+=(--override-variant "$variant")
+            fi
+          fi
+
+          echo "Sync docker://$source_image -> docker://$target_image"
+          echo "all_arch=$all_arch platform=$PLATFORM"
+
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt/3"
+            if skopeo copy "${copy_args[@]}" "docker://$source_image" "docker://$target_image"; then
+              echo "Synced docker://$source_image -> docker://$target_image" >> "$GITHUB_STEP_SUMMARY"
+              echo "Sync completed"
+              exit 0
+            fi
+            sleep $((attempt * 20))
+          done
+
+          echo "Failed to sync docker://$source_image -> docker://$target_image" >&2
+          exit 1
