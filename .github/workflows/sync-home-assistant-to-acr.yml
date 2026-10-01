@@ -1,0 +1,34 @@
+name: Sync Home Assistant to Aliyun ACR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Log in to Aliyun ACR
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ACR_PASSWORD" | docker login --username "$ACR_USERNAME" --password-stdin registry.cn-shanghai.aliyuncs.com
+      - name: Sync Home Assistant using Docker compatibility path
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_image=ghcr.io/home-assistant/home-assistant:stable
+          target_image=registry.cn-shanghai.aliyuncs.com/rayless/home-assistant:stable
+          for attempt in 1 2 3; do
+            if docker pull --platform linux/amd64 "$source_image" && docker tag "$source_image" "$target_image" && docker push "$target_image"; then
+              echo "Synced Home Assistant linux/amd64 to Aliyun ACR." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep $((attempt * 20))
+          done
+          exit 1
