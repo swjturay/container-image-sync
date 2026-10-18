@@ -33,8 +33,43 @@ jobs:
           printf '%s' "$ACR_PASSWORD" | docker login --username "$ACR_USERNAME" --password-stdin registry.cn-shanghai.aliyuncs.com
       - name: Validate and build linux amd64 image
         run: |
-          docker build --progress plain --platform linux/amd64 -f cpr-rds/Dockerfile -t registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.1 .
+          docker build --progress plain --platform linux/amd64 -f cpr-rds/Dockerfile -t registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.2 .
+      - name: Smoke test full startup with managed password
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_pg_password='RdsSmoke9!abcdefGhRdsSmoke9!abcdef'
+          task_redis_password='222222222222222222222222222222222222222222222222'
+          trap 'docker rm -f cpr-smoke-app cpr-smoke-pg cpr-smoke-redis >/dev/null 2>&1 || true; docker network rm cpr-smoke >/dev/null 2>&1 || true' EXIT
+          docker network create --internal cpr-smoke
+          docker run -d --name cpr-smoke-pg --network cpr-smoke -e POSTGRES_PASSWORD="$task_pg_password" -e POSTGRES_USER=cpr -e POSTGRES_DB=cpr postgres:18-alpine
+          docker run -d --name cpr-smoke-redis --network cpr-smoke redis:8-alpine redis-server --save '' --appendonly no --requirepass "$task_redis_password"
+          for i in $(seq 1 60); do
+            if docker exec cpr-smoke-pg pg_isready -h 127.0.0.1 -U cpr; then break; fi
+            sleep 1
+          done
+          sed "s/default_password: ''/default_password: 'SmokeAdministrator9!'/" source/deploy/config.example.yaml > smoke-config.yaml
+          chmod 644 smoke-config.yaml
+          docker run -d --name cpr-smoke-app --network cpr-smoke \
+            -e CPR_DATABASE_URL=postgres://cpr@cpr-smoke-pg:5432/cpr \
+            -e CPR_DATABASE_PASSWORD="$task_pg_password" \
+            -e CPR_REDIS_URL=redis://cpr-smoke-redis:6379/ \
+            -e CPR_REDIS_PASSWORD="$task_redis_password" \
+            -e CPR_SERVER_HOST=0.0.0.0 -e CPR_SERVER_PORT=8080 \
+            -e CPR_ENABLE_SELF_RESTART=false -e CPR_WEB_DIST_DIR=/app/web/dist \
+            -v "$PWD/smoke-config.yaml:/app/deploy/config.yaml:ro" \
+            registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.2
+          for i in $(seq 1 60); do
+            if docker exec cpr-smoke-app curl -fsS http://127.0.0.1:8080/healthz; then
+              docker exec cpr-smoke-pg psql -U cpr -d cpr -At -c 'select count(*),max(version) from _sqlx_migrations where success'
+              exit 0
+            fi
+            if [ "$(docker inspect cpr-smoke-app --format '{{.State.Running}}')" != true ]; then break; fi
+            sleep 1
+          done
+          docker logs cpr-smoke-app
+          exit 1
       - name: Publish validated compatibility image
         run: |
-          docker push registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.1
-          docker inspect registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.1 --format '{{json .RepoDigests}}' >> "$GITHUB_STEP_SUMMARY"
+          docker push registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.2
+          docker inspect registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.2 --format '{{json .RepoDigests}}' >> "$GITHUB_STEP_SUMMARY"

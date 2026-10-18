@@ -14,9 +14,14 @@ Huawei RDS rejected the upstream 48-character password under its enhanced
 
 The workflow runs formatting checks, configuration tests, and gateway-store
 Clippy before building the release binary. The runtime is the immutable upstream
-amd64 image, with only the binary and version labels replaced. No production
+amd64 image, with only the binary and custom image version label replaced. No production
 credentials or data are used in CI. Publishing the image does not deploy it.
 
 Run the manual `Build CPR RDS compatibility image` workflow. Record its resulting
 ACR digest and perform isolated RDS restore/migration and failback tests before
-deployment. The custom tag is `3.29.2-rds.1`; it is not an upstream release.
+deployment. The custom tag is `3.29.2-rds.2`; it is not an upstream release.
+
+The binary retains upstream host version `3.29.2` and commit identity because the
+packaged official plugin release manifest checks these exact values. The OCI
+version tag and patch label identify this downstream build. The workflow also
+checks full startup with a 32-character database password before publishing.

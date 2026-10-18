@@ -3,7 +3,7 @@ FROM rust:1.99.1-bookworm@sha256:e12566d5abc17a0da741628782cdb504b68b8961f5bfcf6
 WORKDIR /source
 COPY source/ ./
 ENV RUST_MIN_STACK=16777216
-ENV CPR_VERSION=3.29.2-rds.1
+ENV CPR_VERSION=3.29.2
 ENV CPR_GIT_SHA=2221f400da29731c8f62464dd097945b85cf82f1
 ENV CPR_BUILD_TYPE=release
 RUN rustup component add rustfmt clippy
@@ -19,6 +19,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Preserve upstream frontend, runtime dependencies and official plugins verbatim.
 FROM ghcr.io/zyycn/codex-proxy-rs@sha256:4b78b221fc18fbc069a6b1f80eab88634a2b722df1c475044b133085fc1d62cf
 COPY --from=builder --chown=cpr:cpr /tmp/codex-proxy-rs /app/bin/codex-proxy-rs
-LABEL org.opencontainers.image.version="3.29.2-rds.1" \
+LABEL org.opencontainers.image.version="3.29.2-rds.2" \
       org.opencontainers.image.revision="2221f400da29731c8f62464dd097945b85cf82f1" \
       io.rayless.cpr.patch="postgres-password-rds-v1"
