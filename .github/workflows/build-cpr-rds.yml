@@ -1,0 +1,40 @@
+name: Build CPR RDS compatibility image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cpr-rds-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch immutable upstream and apply reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init source
+          git -C source remote add origin https://github.com/zyycn/codex-proxy-rs.git
+          git -C source fetch --depth 1 origin 2221f400da29731c8f62464dd097945b85cf82f1
+          git -C source checkout --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = 2221f400da29731c8f62464dd097945b85cf82f1
+          git -C source apply --check ../cpr-rds/postgres-password.patch
+          git -C source apply ../cpr-rds/postgres-password.patch
+          git -C source diff --check
+          git -C source diff --stat
+      - name: Log in to Aliyun ACR
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          printf '%s' "$ACR_PASSWORD" | docker login --username "$ACR_USERNAME" --password-stdin registry.cn-shanghai.aliyuncs.com
+      - name: Validate and build linux amd64 image
+        run: |
+          docker build --progress plain --platform linux/amd64 -f cpr-rds/Dockerfile -t registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.1 .
+      - name: Publish validated compatibility image
+        run: |
+          docker push registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.1
+          docker inspect registry.cn-shanghai.aliyuncs.com/rayless/codex-proxy-rs:3.29.2-rds.1 --format '{{json .RepoDigests}}' >> "$GITHUB_STEP_SUMMARY"
